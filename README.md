@@ -1,49 +1,64 @@
 # SCDAA Coursework 2025–26 — Code Repository
 
-This repository contains the Python implementation accompanying our submitted PDF report for the **Stochastic Control and Dynamic Asset Allocation (SCDAA)** coursework.
+This repository contains the Python implementation accompanying our submitted report for the **Stochastic Control and Dynamic Asset Allocation (SCDAA)** coursework.
 
 The project implements numerical algorithms for solving stochastic control problems using:
 
-* Linear Quadratic Regulator (LQR) theory,
-* Monte-Carlo simulation,
-* Supervised neural network learning,
-* Deep Galerkin Method (DGM),
-* Policy Iteration Algorithm (PIA).
+* Linear Quadratic Regulator (LQR) theory
+* Monte-Carlo simulation
+* Supervised neural network learning
+* Deep Galerkin Method (DGM)
+* Policy Iteration Algorithm (PIA)
 
-All experiments reproduce the numerical results and figures presented in the report.
-
----
-
-## Group Members & Contributions
-
-As required by the coursework specification, this project was completed in a group of three students.
-
-The workload was shared equally and agreed upon by all members.
-
-| Name     | Student Number | Contribution |
-| -------- | -------------- | ------------ |
-| Member 1 | XXXXXXXX       | 33.3%        |
-| Member 2 | XXXXXXXX       | 33.3%        |
-| Member 3 | XXXXXXXX       | 33.4%        |
+All experiments reproduce the numerical results, tables, and figures presented in the submitted report.
 
 ---
 
-## Dependencies & Environment Setup
+## Project Overview
 
-Only libraries explicitly permitted in the coursework instructions are used:
+The coursework studies numerical methods for solving stochastic control problems arising in dynamic asset allocation.
 
-* `numpy`
-* `scipy`
-* `matplotlib`
-* `torch`
+The implementation includes:
 
-Install dependencies using:
+* Analytical **LQR benchmark solutions**
+* **Monte-Carlo validation** of numerical schemes
+* **Supervised neural networks** for approximating value functions and optimal controls
+* **Deep Galerkin Method (DGM)** for solving the associated Hamilton–Jacobi–Bellman PDE
+* **Policy Iteration Algorithms (PIA)** combined with deep learning for control improvement
+
+The repository is organized so that each exercise corresponds to one independent Python script.
+
+---
+
+## Quick Start
+
+### 1. Install Dependencies
+
+Only libraries permitted in the coursework specification are used.
 
 ```bash
 pip install numpy scipy matplotlib torch
 ```
 
-Python ≥ 3.9 is recommended.
+Python **3.9 or newer** is recommended.
+
+If a CUDA-enabled GPU is available, PyTorch will automatically utilize it.
+However, all experiments can also be executed on a standard CPU.
+
+---
+
+### 2. Run All Experiments
+
+All figures and numerical results in the report can be reproduced by running:
+
+```bash
+python ex1_lqr_mc.py
+python ex2_supervised.py
+python ex3_dgm.py
+python ex4_pia.py
+```
+
+Generated plots will be saved automatically in the `plots/` directory.
 
 ---
 
@@ -52,128 +67,133 @@ Python ≥ 3.9 is recommended.
 ```
 SCDAA-CW-2026/
 │
-├── report/
-│   └── SCDAA_Report.pdf
+├── SCDAA.pdf                   # Submitted coursework report
 │
-├── src/
-│   ├── lqr.py                  # Exercise 1.1
-│   ├── mc_simulation.py        # Exercise 1.2
-│   ├── networks.py             # Neural network definitions
-│   ├── supervised_value.py     # Exercise 2.1
-│   ├── supervised_control.py   # Exercise 2.2
-│   ├── dgm_pde.py              # Exercise 3.1
-│   └── policy_iteration.py     # Exercise 4.1
+├── ex1_lqr_mc.py               # Exercise 1: LQR solution & Monte-Carlo validation
+├── ex2_supervised.py           # Exercise 2: Supervised learning of value & control
+├── ex3_dgm.py                  # Exercise 3: Deep Galerkin Method for PDE
+├── ex4_pia.py                  # Exercise 4: Policy Iteration with DGM
 │
-├── plots/                      # Automatically generated figures
+├── plots/                      # Figures generated during execution
 │
-├── main.py                     # Runs all experiments
 └── README.md
 ```
 
 ---
 
-## Running the Code
+## Experiments
 
-All results shown in the report can be reproduced from this repository.
+### Exercise 1 — LQR Solution & Monte-Carlo Validation
 
-### Run Entire Coursework (Recommended)
+Solves the Riccati equation for the analytical LQR solution and verifies numerical convergence using Monte-Carlo simulation.
 
-```bash
-python main.py
-```
-
-This sequentially executes all exercises and automatically generates figures in the `/plots` directory.
-
----
-
-## Exercise-by-Exercise Execution
-
-### Exercise 1 — LQR Solution & Monte Carlo Validation
-
-Solves the Riccati equation and validates convergence using Monte-Carlo simulation.
+Run:
 
 ```bash
-python src/mc_simulation.py
+python ex1_lqr_mc.py
 ```
 
-Generated outputs:
+Outputs:
 
-* Time discretisation convergence plot
-* Monte-Carlo sampling convergence plot
+* Error metrics for time discretisation and sample size
+* Convergence plots stored in
+  `plots/convergence_plot.png`
 
 ---
 
 ### Exercise 2 — Supervised Learning
 
-#### Value Function Approximation
+Trains neural networks to approximate:
+
+* the **value function**
+* the **optimal control policy**
+
+Networks used:
+
+* `NetDGM` (value function approximation)
+* `NetFFN` (control policy approximation)
+
+Run:
 
 ```bash
-python src/supervised_value.py
-```
-
-#### Optimal Control Approximation
-
-```bash
-python src/supervised_control.py
+python ex2_supervised.py
 ```
 
 Outputs:
 
-* Neural network training loss plots
+* MSE training logs
+* `plots/ex2_supervised_loss.png`
 
 ---
 
 ### Exercise 3 — Deep Galerkin Method
 
-Solves the linear PDE using the Deep Galerkin Method.
+Solves the linear PDE associated with a fixed control policy using the **Deep Galerkin Method**.
+
+Run:
 
 ```bash
-python src/dgm_pde.py
+python ex3_dgm.py
 ```
 
 Outputs:
 
-* DGM training loss
-* Error comparison with Monte-Carlo benchmark
+* DGM loss evolution
+* `plots/ex3_dgm_results.png`
 
 ---
 
-### Exercise 4 — Policy Iteration with DGM
+### Exercise 4 — Policy Iteration Algorithm
 
-Implements policy evaluation and improvement steps iteratively.
+Implements iterative **policy evaluation and policy improvement** using DGM approximations.
+
+Run:
 
 ```bash
-python src/policy_iteration.py
+python ex4_pia.py
 ```
 
 Outputs:
 
-* Policy convergence plots
-* Value function comparison with analytical LQR solution
+* policy convergence logs
+* `plots/ex4_policy_iteration.png`
 
 ---
 
 ## Reproducibility
 
-All numerical results, tables, and figures included in the submitted report were generated using the scripts contained in this repository.
+All numerical results and figures reported in the coursework report were generated using the scripts in this repository.
 
-The marker can reproduce every figure by:
+The marker can reproduce all experiments using:
 
 ```bash
-pip install -r requirements.txt
-python main.py
+pip install numpy scipy matplotlib torch
+
+python ex1_lqr_mc.py
+python ex2_supervised.py
+python ex3_dgm.py
+python ex4_pia.py
 ```
 
-No manual intervention or parameter tuning is required.
+No manual parameter tuning or intervention is required.
 
 ---
 
-## Implementation Notes
+## Implementation Details
 
-* Automatic differentiation in PyTorch is used to compute gradients and Hessians required by the Deep Galerkin Method.
-* Monte-Carlo simulations follow Euler–Maruyama discretisation.
-* Log–log convergence plots are provided to verify theoretical convergence rates.
-* Analytical LQR solutions are used as ground truth validation throughout.
+Key implementation aspects include:
+
+* **Automatic differentiation** in PyTorch to compute gradients and Hessians required by the Deep Galerkin Method (`create_graph=True`).
+
+* **Dynamic domain sampling** at every training epoch to improve global generalization.
+
+* **Decoupled computational graphs (`.detach()`)** in the Policy Iteration Algorithm to ensure stable alternating optimisation.
+
+* **Explicit Euler–Maruyama discretisation** for Monte-Carlo simulation of stochastic differential equations.
+
+* **Log–log convergence plots** verifying theoretical convergence rates.
+
+* **Analytical LQR solutions** used as ground-truth validation benchmarks.
 
 ---
 
@@ -181,16 +201,27 @@ No manual intervention or parameter tuning is required.
 
 Approximate runtime on a standard laptop CPU:
 
-| Task                | Time          |
-| ------------------- | ------------- |
-| Monte Carlo checks  | 2–5 minutes   |
-| Supervised learning | 3–5 minutes   |
-| DGM training        | 5–10 minutes  |
-| Policy iteration    | 10–15 minutes |
+| Task                   | Time         |
+| ---------------------- | ------------ |
+| Monte Carlo validation | 1–3 minutes  |
+| Supervised learning    | 2–4 minutes  |
+| DGM training           | 5–8 minutes  |
+| Policy iteration       | 8–12 minutes |
+
+---
+
+## Group Members & Contributions
+
+As required by the coursework specification, this project was completed collaboratively by three students. The workload was shared equally and agreed upon by all members.
+
+| Name        | Student Number | Contribution |
+| ----------- | -------------- | ------------ |
+| Yiwen Wan   | s2769905       | 33.3%        |
+| Jixuan He   | s2778923       | 33.3%        |
+| Jiajun Zhao | s2882066       | 33.4%        |
 
 ---
 
 ## Contact
 
 If any issues arise when running the code, please contact any group member listed above.
-
