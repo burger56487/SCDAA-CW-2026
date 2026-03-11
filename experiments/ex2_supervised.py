@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -165,5 +166,11 @@ if __name__ == "__main__":
     plt.grid(True, which="both", ls="--")
 
     plt.tight_layout()
-    plt.savefig('ex2_supervised_loss.png', dpi=300)
-    print("\n✅ Training complete! The loss plots have been saved as 'ex2_supervised_loss.png'.")
+    
+    # ==========================================
+    # MODIFIED: Ensure 'plots' directory exists and save the image there
+    # ==========================================
+    os.makedirs('plots', exist_ok=True)
+    save_path = os.path.join('plots', 'ex2_supervised_loss.png')
+    plt.savefig(save_path, dpi=300)
+    print(f"\n✅ Training complete! The loss plots have been saved as '{save_path}'.")

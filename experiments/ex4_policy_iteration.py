@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -53,7 +54,7 @@ def pde_loss(model_v, model_a, t, x, H, M, sigma, C, D, R_mat, T):
     inputs = torch.cat([t, x], dim=1)
     u = model_v(inputs)
     
-    # 🌟 Core Fix: Correctly split and compute Hessian to avoid cross-batch summation bug
+    # Core Fix: Correctly split and compute Hessian to avoid cross-batch summation bug
     du = torch.autograd.grad(u, inputs=[t, x], grad_outputs=torch.ones_like(u), create_graph=True)
     u_t, u_x = du[0], du[1]
     
@@ -112,7 +113,7 @@ def hamiltonian_loss(model_v, model_a, t, x, H, M, C, D):
     # 1. Compute \partial_x v (Fix v, detach its computation graph)
     u = model_v(inputs)
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=False)[0]
-    u_x = u_x.detach() # 🌟 Detach the value function's gradient graph
+    u_x = u_x.detach() # Detach the value function's gradient graph
     
     # 2. Compute current policy network output (enable gradients for optimizer_a)
     a_pred = model_a(inputs)
@@ -129,7 +130,7 @@ def hamiltonian_loss(model_v, model_a, t, x, H, M, C, D):
     term_Cx = torch.bmm(torch.bmm(x_row, C.expand(batch_size, 2, 2)), x_col).squeeze(-1)
     term_Da = torch.bmm(torch.bmm(a_row, D.expand(batch_size, 2, 2)), a_col).squeeze(-1)
     
-    # 🌟 Hamiltonian (No need for MSE, directly minimize its expected value)
+    # Hamiltonian (No need for MSE, directly minimize its expected value)
     hamiltonian = term_Hx + term_Ma + term_Cx + term_Da
     return torch.mean(hamiltonian)
 
@@ -259,5 +260,11 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig('ex4_policy_iteration.png', dpi=300)
-    print("\n✅ PIA Training complete! The convergence plot has been saved as 'ex4_policy_iteration.png'.")
+    
+    # ==========================================
+    # MODIFIED: Ensure 'plots' directory exists and save the image there
+    # ==========================================
+    os.makedirs('plots', exist_ok=True)
+    save_path = os.path.join('plots', 'ex4_policy_iteration.png')
+    plt.savefig(save_path, dpi=300)
+    print(f"\n✅ PIA Training complete! The convergence plot has been saved as '{save_path}'.")

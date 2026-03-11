@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -50,7 +51,7 @@ def run_mc_constant_alpha(x0, T, N_steps, N_samples, H_np, M_np, sigma_np, C_np,
     X = torch.tensor(x0, dtype=torch.float32, device=device).repeat(N_samples, 1).unsqueeze(-1)
     total_cost = torch.zeros(N_samples, 1, 1, device=device)
     
-    # [cite_start]Constant control policy alpha = [1, 1]^T [cite: 91, 93, 102]
+    # Constant control policy alpha = [1, 1]^T
     a_col = torch.ones(N_samples, 2, 1, dtype=torch.float32, device=device)
     
     for _ in range(N_steps):
@@ -121,7 +122,7 @@ def dgm_loss(model, t, x, H, M, sigma, C, D, R_mat, T):
     alpha_row = alpha.transpose(1, 2)
     term_Dalpha = torch.bmm(torch.bmm(alpha_row, D.expand(batch_size, 2, 2)), alpha).squeeze(-1)
     
-    # [cite_start]PDE Interior Equation Residual [cite: 92, 95]
+    # PDE Interior Equation Residual
     residual = u_t + trace_term + term_Hx + term_Malpha + term_Cx + term_Dalpha
     loss_eqn = torch.mean(residual**2)
     
@@ -240,5 +241,11 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig('ex3_dgm_results.png', dpi=300)
-    print("\n✅ DGM training complete! The loss and error comparison plots have been saved as 'ex3_dgm_results.png'.")
+    
+    # ==========================================
+    # MODIFIED: Ensure 'plots' directory exists and save the image there
+    # ==========================================
+    os.makedirs('plots', exist_ok=True)
+    save_path = os.path.join('plots', 'ex3_dgm_results.png')
+    plt.savefig(save_path, dpi=300)
+    print(f"\n✅ DGM training complete! The loss and error comparison plots have been saved as '{save_path}'.")
