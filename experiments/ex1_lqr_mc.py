@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 from scipy.integrate import solve_ivp, cumulative_trapezoid
@@ -171,7 +172,7 @@ def plot_convergence(lqr_solver, x0, T):
     plt.figure(figsize=(14, 6))
     plt.subplot(1, 2, 1)
     plt.loglog(N_steps_list, errors_time, 'o-', label='MC Error')
-    # Use index 2 (N_steps=10) to anchor the reference line
+    # Use index 2 (N_steps=4) to anchor the reference line
     ref_line_1 = [errors_time[2] * (N_steps_list[2] / n) for n in N_steps_list]
     plt.loglog(N_steps_list, ref_line_1, 'r--', label='Reference O(1/N_steps)')
     plt.title('Convergence of Time Discretization')
@@ -182,7 +183,7 @@ def plot_convergence(lqr_solver, x0, T):
 
     plt.subplot(1, 2, 2)
     plt.loglog(N_samples_list, errors_samples, 's-', color='orange', label='MC Error')
-    # Use index 3 (N_samples=100) to anchor the reference line
+    # Use index 3 (N_samples=80) to anchor the reference line
     ref_line_2 = [errors_samples[3] * np.sqrt(N_samples_list[3] / n) for n in N_samples_list]
     plt.loglog(N_samples_list, ref_line_2, 'r--', label='Reference O(1/sqrt(N_samples))')
     plt.title('Convergence of Monte Carlo Sampling')
@@ -192,8 +193,14 @@ def plot_convergence(lqr_solver, x0, T):
     plt.grid(True, which="both", ls="--")
 
     plt.tight_layout()
-    plt.savefig('convergence_plot.png', dpi=300)
-    print("\n✅ The plot has been successfully saved as 'convergence_plot.png' in the current directory.")
+    
+    # ==========================================
+    # MODIFIED: Ensure 'plots' directory exists and save the image there
+    # ==========================================
+    os.makedirs('plots', exist_ok=True)
+    save_path = os.path.join('plots', 'convergence_plot.png')
+    plt.savefig(save_path, dpi=300)
+    print(f"\n✅ The plot has been successfully saved as '{save_path}'.")
 
 # ==========================================
 # 4. Main Program Entry
