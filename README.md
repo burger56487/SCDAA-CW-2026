@@ -78,7 +78,7 @@ SCDAA-CW-2026/
 ├── ex1_lqr_mc.py               # Exercise 1: LQR solution & Monte-Carlo validation
 ├── ex2_supervised.py           # Exercise 2: Supervised learning of value & control
 ├── ex3_dgm.py                  # Exercise 3: Deep Galerkin Method for PDE
-├── ex4_pia.py                  # Exercise 4: Policy Iteration with DGM
+├── ex4_policy_iteration.py     # Exercise 4: Policy Iteration with DGM
 │
 ├── plots/                      # Figures generated during execution
 │
@@ -156,7 +156,7 @@ Implements iterative **policy evaluation and policy improvement** using DGM appr
 Run:
 
 ```bash
-python ex4_pia.py
+python ex4_policy_iteration.py
 ```
 
 Outputs:
@@ -178,7 +178,7 @@ pip install numpy scipy matplotlib torch
 python ex1_lqr_mc.py
 python ex2_supervised.py
 python ex3_dgm.py
-python ex4_pia.py
+python ex4_policy_iteration.py
 ```
 
 No manual parameter tuning or intervention is required.
