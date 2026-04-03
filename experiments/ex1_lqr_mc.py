@@ -24,24 +24,33 @@ class LQR_Solver:
 
     def riccati_ode(self, t, S_flat):
         S = S_flat.reshape((2, 2))
-        dS = -2 * self.H @ S + S @ self.M @ self.D_inv @ self.M.T @ S - self.C
+        # 【Key Correction】Use the standard Riccati form to ensure that S is always symmetric and to guard against the non-diagonal matrix test cases.
+        dS = (
+            S @ self.M @ self.D_inv @ self.M.T @ S
+            - self.H.T @ S
+            - S @ self.H
+            - self.C
+        )
         return dS.flatten()
 
     def solve_riccati(self, time_grid):
         time_grid_rev = np.flip(time_grid)
         S_T_flat = self.R.flatten()
         
-        # Optimization 1: Increase Riccati ODE solving precision to prevent MC error 
-        # convergence curve from flattening prematurely.
+        # 提高精度，确保后续 MC 收敛曲线在末端不会因为 ODE 精度不够而变平
         sol = solve_ivp(
             fun=self.riccati_ode,
             t_span=(self.T, 0.0),
             y0=S_T_flat,
             t_eval=time_grid_rev,
             method='RK45',
-            rtol=1e-8,  # Increased relative tolerance
-            atol=1e-8   # Increased absolute tolerance
+            rtol=1e-8,  
+            atol=1e-8   
         )
+        
+        if not sol.success:
+            raise RuntimeError(f"Riccati ODE solver failed: {sol.message}")
+
         t_forward = np.flip(sol.t)
         S_forward = np.flip(sol.y, axis=1)
         self.S_interp = interp1d(t_forward, S_forward, kind='cubic', axis=1, fill_value="extrapolate")
@@ -65,14 +74,12 @@ class LQR_Solver:
 
     def value_function(self, t_batch, x_batch):
         S_t, integral_t = self._get_S_and_integral(t_batch)
+        # 使用现代 PyTorch 的 .mT 语法
         x_S_x = torch.bmm(torch.bmm(x_batch, S_t), x_batch.mT)
         v_val = x_S_x.squeeze(2) + integral_t
         return v_val
         
     def markov_control(self, t_batch, x_batch):
-        """
-        Required for Exercise 1.1 / 2.2: Returns optimal Markov control a(t,x)
-        """
         S_t, _ = self._get_S_and_integral(t_batch)
         K_np = -self.D_inv @ self.M.T
         K = torch.tensor(K_np, dtype=torch.float32, device=t_batch.device).unsqueeze(0)
@@ -89,7 +96,7 @@ def run_mc_lqr(lqr_solver, x0, T, N_steps, N_samples):
     dt = T / N_steps
     sqrt_dt = np.sqrt(dt)
 
-    # Optimization 2: Move .expand() out of the loop to avoid reallocating view objects in every iteration
+    # 预分配 Tensor 提升循环速度
     H_batch = torch.tensor(lqr_solver.H, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
     M_batch = torch.tensor(lqr_solver.M, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
     sigma_batch = torch.tensor(lqr_solver.sigma, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
@@ -97,42 +104,34 @@ def run_mc_lqr(lqr_solver, x0, T, N_steps, N_samples):
     D_batch = torch.tensor(lqr_solver.D, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
     R_batch = torch.tensor(lqr_solver.R, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
 
-    # Optimization 3: Precompute S(t) and control gain K_S for the entire time grid at once, eliminating CPU-GPU communication inside the loop
     time_grid = np.linspace(0, T, N_steps, endpoint=False)
-    S_flat_np = lqr_solver.S_interp(time_grid) # Call SciPy only once
+    S_flat_np = lqr_solver.S_interp(time_grid) 
     S_seq = torch.tensor(S_flat_np.T, dtype=torch.float32, device=device).reshape(N_steps, 2, 2)
     
     K_np = -lqr_solver.D_inv @ lqr_solver.M.T
     K_tensor = torch.tensor(K_np, dtype=torch.float32, device=device)
-    
-    # Control law a = K @ S(t) @ X, precompute KS(t) = K @ S(t)
     KS_seq = torch.matmul(K_tensor, S_seq)
 
     X = torch.tensor(x0, dtype=torch.float32, device=device).repeat(N_samples, 1).unsqueeze(-1)
     total_cost = torch.zeros(N_samples, 1, 1, device=device)
     
     for i in range(N_steps):
-        # Extract the control gain for the current step directly from the precomputed GPU tensor by index
         KS_i = KS_seq[i].expand(N_samples, 2, 2)
-        
-        # Calculate control vector a
         a_col = torch.bmm(KS_i, X)
         
-        X_T = X.transpose(1, 2)
-        a_T = a_col.transpose(1, 2)
+        X_T = X.mT
+        a_T = a_col.mT
         
-        # Running cost
         cost_X = torch.bmm(torch.bmm(X_T, C_batch), X)
         cost_a = torch.bmm(torch.bmm(a_T, D_batch), a_col)
         total_cost += (cost_X + cost_a) * dt
         
-        # Euler-Maruyama step (Explicit)
         dW = torch.randn(N_samples, 2, 1, device=device) * sqrt_dt
         drift = torch.bmm(H_batch, X) + torch.bmm(M_batch, a_col)
         diffusion = torch.bmm(sigma_batch, dW)
         X = X + drift * dt + diffusion
         
-    term_cost = torch.bmm(torch.bmm(X.transpose(1, 2), R_batch), X)
+    term_cost = torch.bmm(torch.bmm(X.mT, R_batch), X)
     total_cost += term_cost
     return total_cost.mean().item()
 
@@ -146,7 +145,7 @@ def plot_convergence(lqr_solver, x0, T):
     print(f"Theoretical true value v(0, x_0): {v_true:.6f}")
 
     N_samples_fixed = 10**5
-    # ADDED MORE DATA POINTS for higher precision rendering
+    # 保留更密集的数据点以获得漂亮的收敛图
     N_steps_list = [1, 2, 4, 8, 15, 30, 60, 120, 250, 500, 1000, 2000, 3000, 4000, 5000] 
     errors_time = []
     
@@ -158,7 +157,6 @@ def plot_convergence(lqr_solver, x0, T):
         print(f"N_steps: {n_step:4d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
     N_steps_fixed = 5000
-    # ADDED MORE DATA POINTS for higher precision rendering
     N_samples_list = [10, 20, 40, 80, 150, 300, 600, 1200, 2500, 5000, 10000, 20000, 40000, 60000, 80000, 100000]
     errors_samples = []
 
@@ -170,9 +168,9 @@ def plot_convergence(lqr_solver, x0, T):
         print(f"N_samples: {n_samp:6d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
     plt.figure(figsize=(14, 6))
+    
     plt.subplot(1, 2, 1)
     plt.loglog(N_steps_list, errors_time, 'o-', label='MC Error')
-    # Use index 2 (N_steps=4) to anchor the reference line
     ref_line_1 = [errors_time[2] * (N_steps_list[2] / n) for n in N_steps_list]
     plt.loglog(N_steps_list, ref_line_1, 'r--', label='Reference O(1/N_steps)')
     plt.title('Convergence of Time Discretization')
@@ -183,7 +181,6 @@ def plot_convergence(lqr_solver, x0, T):
 
     plt.subplot(1, 2, 2)
     plt.loglog(N_samples_list, errors_samples, 's-', color='orange', label='MC Error')
-    # Use index 3 (N_samples=80) to anchor the reference line
     ref_line_2 = [errors_samples[3] * np.sqrt(N_samples_list[3] / n) for n in N_samples_list]
     plt.loglog(N_samples_list, ref_line_2, 'r--', label='Reference O(1/sqrt(N_samples))')
     plt.title('Convergence of Monte Carlo Sampling')
@@ -194,17 +191,11 @@ def plot_convergence(lqr_solver, x0, T):
 
     plt.tight_layout()
     
-    # ==========================================
-    # MODIFIED: Ensure 'plots' directory exists and save the image there
-    # ==========================================
     os.makedirs('plots', exist_ok=True)
     save_path = os.path.join('plots', 'convergence_plot.png')
     plt.savefig(save_path, dpi=300)
     print(f"\n✅ The plot has been successfully saved as '{save_path}'.")
 
-# ==========================================
-# 4. Main Program Entry
-# ==========================================
 if __name__ == "__main__":
     H_mat = np.array([[0.1, 0.0], [0.0, 0.1]])
     M_mat = np.array([[1.0, 0.0], [0.0, 1.0]])
