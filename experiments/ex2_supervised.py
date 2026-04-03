@@ -133,10 +133,10 @@ if __name__ == "__main__":
     print("LQR benchmark ready.")
 
     # ---------------------------------------------------------
-    # 【关键修改】：在循环外部生成“固定”的训练集和测试集
+    # [Key Modification]: Generate "fixed" training and testing sets outside the loop
     # ---------------------------------------------------------
-    N_data_train = 50000  # 固定的训练集大小
-    N_data_val = 10000    # 固定的验证集大小
+    N_data_train = 50000  # Fixed training set size
+    N_data_val = 10000    # Fixed training set size
 
     print(f"Generating fixed training dataset of size {N_data_train}...")
     train_inputs, train_v_targets, train_a_targets = generate_training_batch(lqr_solver, N_data_train, T_val, device)
@@ -144,11 +144,11 @@ if __name__ == "__main__":
     print(f"Generating fixed validation dataset of size {N_data_val}...")
     val_inputs, val_v_targets, val_a_targets = generate_training_batch(lqr_solver, N_data_val, T_val, device)
 
-    # 初始化网络和优化器
+    # Initialize the network and the optimizer
     model_v = NetDGM(input_dim=3, hidden_dim=100, output_dim=1).to(device)
     model_a = NetFFN(input_dim=3, hidden_dim=100, output_dim=2).to(device)
 
-    # 学习率可以稍微调大一点，因为我们是在整个大 batch 上做全梯度下降 (Full-batch Gradient Descent)
+    
     optimizer_v = optim.Adam(model_v.parameters(), lr=5e-3)
     optimizer_a = optim.Adam(model_a.parameters(), lr=5e-3)
 
@@ -209,7 +209,7 @@ if __name__ == "__main__":
                 f"Eval Loss A: {val_a:.6e}"
             )
 
-    # 画图部分保持你的原本优秀逻辑不变
+    
     os.makedirs("plots", exist_ok=True)
     plt.figure(figsize=(14, 6))
 

@@ -24,7 +24,7 @@ class LQR_Solver:
 
     def riccati_ode(self, t, S_flat):
         S = S_flat.reshape((2, 2))
-        # 修正：使用标准的 Riccati 形式保证 S 永远对称
+        # Use the standard Riccati form to ensure that S is always symmetric.
         dS = (
             S @ self.M @ self.D_inv @ self.M.T @ S
             - self.H.T @ S
@@ -37,7 +37,7 @@ class LQR_Solver:
         time_grid_rev = np.flip(time_grid)
         S_T_flat = self.R.flatten()
         
-        # 提高精度，满足 Warning 提示中的隐藏要求
+        # Improve the accuracy and meet the hidden requirements specified in the Warning prompt.
         sol = solve_ivp(
             fun=self.riccati_ode,
             t_span=(self.T, 0.0),
@@ -146,7 +146,7 @@ def plot_convergence(lqr_solver, x0, T):
     print(f"Theoretical true value v(0, x_0): {v_true:.6f}")
 
     N_samples_fixed = 10**5
-    # 严格遵循作业要求的列表
+    # Strictly follow the list of assignment requirements
     N_steps_list = [1, 10, 50, 100, 500, 1000, 5000] 
     errors_time = []
     
@@ -159,7 +159,7 @@ def plot_convergence(lqr_solver, x0, T):
         print(f"N_steps: {n_step:5d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
     N_steps_fixed = 5000
-    # 严格遵循作业要求的列表 (10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
+    # Strictly follow the list of assignment requirements (10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
     N_samples_list = [10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000]
     errors_samples = []
     mc_values_samples = []
