@@ -156,17 +156,20 @@ def plot_convergence(lqr_solver, x0, T):
         err = abs(v_mc - v_true)
         errors_time.append(err)
         print(f"N_steps: {n_step:5d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
+        print(f"N_steps: {n_step:5d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
     N_steps_fixed = 5000
     # 严格遵循作业要求的列表 (10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
     N_samples_list = [10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000]
     errors_samples = []
     mc_values_samples = []
+    mc_values_samples = []
 
     print("\n--- Starting Test: Monte Carlo Sample Size Convergence ---")
     for n_samp in N_samples_list:
         v_mc = run_mc_lqr(lqr_solver, x0, T, N_steps=N_steps_fixed, N_samples=n_samp)
         err = abs(v_mc - v_true)
+        mc_values_samples.append(v_mc)
         mc_values_samples.append(v_mc)
         errors_samples.append(err)
         print(f"N_samples: {n_samp:6d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")

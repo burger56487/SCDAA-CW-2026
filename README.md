@@ -2,31 +2,45 @@
 
 This repository contains the Python implementation accompanying our submitted report for the **Stochastic Control and Dynamic Asset Allocation (SCDAA)** coursework.
 
-The project implements numerical algorithms for solving stochastic control problems using:
+The project implements numerical methods for solving a two-dimensional Linear Quadratic Regulator (LQR) problem using:
 
-* Linear Quadratic Regulator (LQR) theory
-* Monte-Carlo simulation
-* Supervised neural network learning
-* Deep Galerkin Method (DGM)
-* Policy Iteration Algorithm (PIA)
+- analytical Riccati-ODE benchmark solutions,
+- Monte Carlo simulation,
+- supervised neural network learning,
+- the Deep Galerkin Method (DGM),
+- policy iteration with neural-network approximation.
 
-All experiments reproduce the numerical results, tables, and figures presented in the submitted report.
+The scripts in this repository reproduce the numerical figures and tabulated results reported in the final coursework report. As required by the coursework brief, the repository includes a `README.md` explaining how to run the code to reproduce the reported outputs. :contentReference[oaicite:1]{index=1}
 
 ---
 
 ## Project Overview
 
-The coursework studies numerical methods for solving stochastic control problems arising in dynamic asset allocation.
+The coursework studies numerical methods for stochastic control problems arising from dynamic asset allocation.
 
 The implementation includes:
 
-* Analytical **LQR benchmark solutions**
-* **Monte-Carlo validation** of numerical schemes
-* **Supervised neural networks** for approximating value functions and optimal controls
-* **Deep Galerkin Method (DGM)** for solving the associated Hamilton–Jacobi–Bellman PDE
-* **Policy Iteration Algorithms (PIA)** combined with deep learning for control improvement
+- **Exercise 1:** analytical LQR benchmark via the Riccati ODE and Monte Carlo validation,
+- **Exercise 2:** supervised learning of the value function and optimal Markov control,
+- **Exercise 3:** Deep Galerkin Method for a linear PDE under a fixed control,
+- **Exercise 4:** policy iteration combining DGM-based policy evaluation with neural-network policy improvement.
 
-The repository is organized so that each exercise corresponds to one independent Python script.
+Each exercise is implemented in a separate Python script.
+
+---
+
+## Requirements
+
+Only the libraries permitted by the coursework brief are used:
+
+- `numpy`
+- `scipy`
+- `matplotlib`
+- `torch`
+
+Python **3.9 or newer** is recommended.
+
+All scripts can be run on CPU. If a CUDA-enabled GPU is available and correctly configured in PyTorch, it may be used automatically.
 
 ---
 
@@ -34,16 +48,8 @@ The repository is organized so that each exercise corresponds to one independent
 
 ### 1. Install Dependencies
 
-Only libraries permitted in the coursework specification are used.
-
 ```bash
 pip install numpy scipy matplotlib torch
-```
-
-Python **3.9 or newer** is recommended.
-
-If a CUDA-enabled GPU is available, PyTorch will automatically utilize it.
-However, all experiments can also be executed on a standard CPU.
 
 ---
 
