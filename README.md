@@ -85,10 +85,10 @@ SCDAA-CW-2026/
 │
 ├── README.md
 |
-|—— gitmore
-| ├── _pycache
+|—— .gitignore
+| ├── __pycache__
 │ ├── venv
-│ └── vscode
+│ └── .vscode
 │ 
 
 ```
