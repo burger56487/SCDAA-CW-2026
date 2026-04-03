@@ -83,14 +83,7 @@ SCDAA-CW-2026/
 │   ├── ex3_dgm_results.png
 │   └── ex4_policy_iteration.png
 │
-├── README.md
-|
-|—— .gitignore
-| ├── __pycache__
-│ ├── venv
-│ └── .vscode
-│ 
-
+└── README.md
 ```
 
 ---
