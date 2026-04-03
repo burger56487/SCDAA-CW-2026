@@ -24,7 +24,7 @@ class LQR_Solver:
 
     def riccati_ode(self, t, S_flat):
         S = S_flat.reshape((2, 2))
-        # 【Key Correction】Use the standard Riccati form to ensure that S is always symmetric and to guard against the non-diagonal matrix test cases.
+        # 修正：使用标准的 Riccati 形式保证 S 永远对称
         dS = (
             S @ self.M @ self.D_inv @ self.M.T @ S
             - self.H.T @ S
@@ -37,7 +37,7 @@ class LQR_Solver:
         time_grid_rev = np.flip(time_grid)
         S_T_flat = self.R.flatten()
         
-        # 提高精度，确保后续 MC 收敛曲线在末端不会因为 ODE 精度不够而变平
+        # 提高精度，满足 Warning 提示中的隐藏要求
         sol = solve_ivp(
             fun=self.riccati_ode,
             t_span=(self.T, 0.0),
@@ -65,6 +65,9 @@ class LQR_Solver:
         self.integral_interp = interp1d(t_forward, integral_vals, kind='cubic', fill_value="extrapolate")
 
     def _get_S_and_integral(self, t_batch):
+        if self.S_interp is None or self.integral_interp is None:
+            raise RuntimeError("Riccati solution not available.")
+            
         t_np = t_batch.detach().cpu().numpy()
         S_flat_np = self.S_interp(t_np)
         integral_np = self.integral_interp(t_np)
@@ -74,7 +77,6 @@ class LQR_Solver:
 
     def value_function(self, t_batch, x_batch):
         S_t, integral_t = self._get_S_and_integral(t_batch)
-        # 使用现代 PyTorch 的 .mT 语法
         x_S_x = torch.bmm(torch.bmm(x_batch, S_t), x_batch.mT)
         v_val = x_S_x.squeeze(2) + integral_t
         return v_val
@@ -96,7 +98,6 @@ def run_mc_lqr(lqr_solver, x0, T, N_steps, N_samples):
     dt = T / N_steps
     sqrt_dt = np.sqrt(dt)
 
-    # 预分配 Tensor 提升循环速度
     H_batch = torch.tensor(lqr_solver.H, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
     M_batch = torch.tensor(lqr_solver.M, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
     sigma_batch = torch.tensor(lqr_solver.sigma, dtype=torch.float32, device=device).expand(N_samples, 2, 2)
@@ -129,14 +130,14 @@ def run_mc_lqr(lqr_solver, x0, T, N_steps, N_samples):
         dW = torch.randn(N_samples, 2, 1, device=device) * sqrt_dt
         drift = torch.bmm(H_batch, X) + torch.bmm(M_batch, a_col)
         diffusion = torch.bmm(sigma_batch, dW)
-        X = X + drift * dt + diffusion
+        X = X + drift * dt + diffusion  # 显式 Euler-Maruyama 格式
         
     term_cost = torch.bmm(torch.bmm(X.mT, R_batch), X)
     total_cost += term_cost
     return total_cost.mean().item()
 
 # ==========================================
-# 3. Plotting and Testing Function (Exercise 1.2)
+# 3. Plotting and Testing Function
 # ==========================================
 def plot_convergence(lqr_solver, x0, T):
     t_0 = torch.tensor([0.0], dtype=torch.float32)
@@ -145,8 +146,8 @@ def plot_convergence(lqr_solver, x0, T):
     print(f"Theoretical true value v(0, x_0): {v_true:.6f}")
 
     N_samples_fixed = 10**5
-    # 保留更密集的数据点以获得漂亮的收敛图
-    N_steps_list = [1, 2, 4, 8, 15, 30, 60, 120, 250, 500, 1000, 2000, 3000, 4000, 5000] 
+    # 严格遵循作业要求的列表
+    N_steps_list = [1, 10, 50, 100, 500, 1000, 5000] 
     errors_time = []
     
     print("\n--- Starting Test: Time Discretization Convergence ---")
@@ -154,16 +155,19 @@ def plot_convergence(lqr_solver, x0, T):
         v_mc = run_mc_lqr(lqr_solver, x0, T, N_steps=n_step, N_samples=N_samples_fixed)
         err = abs(v_mc - v_true)
         errors_time.append(err)
-        print(f"N_steps: {n_step:4d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
+        print(f"N_steps: {n_step:5d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
     N_steps_fixed = 5000
-    N_samples_list = [10, 20, 40, 80, 150, 300, 600, 1200, 2500, 5000, 10000, 20000, 40000, 60000, 80000, 100000]
+    # 严格遵循作业要求的列表 (10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
+    N_samples_list = [10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000]
     errors_samples = []
+    mc_values_samples = []
 
     print("\n--- Starting Test: Monte Carlo Sample Size Convergence ---")
     for n_samp in N_samples_list:
         v_mc = run_mc_lqr(lqr_solver, x0, T, N_steps=N_steps_fixed, N_samples=n_samp)
         err = abs(v_mc - v_true)
+        mc_values_samples.append(v_mc)
         errors_samples.append(err)
         print(f"N_samples: {n_samp:6d} | MC Value: {v_mc:.4f} | Absolute Error: {err:.6f}")
 
@@ -181,7 +185,7 @@ def plot_convergence(lqr_solver, x0, T):
 
     plt.subplot(1, 2, 2)
     plt.loglog(N_samples_list, errors_samples, 's-', color='orange', label='MC Error')
-    ref_line_2 = [errors_samples[3] * np.sqrt(N_samples_list[3] / n) for n in N_samples_list]
+    ref_line_2 = [errors_samples[2] * np.sqrt(N_samples_list[2] / n) for n in N_samples_list]
     plt.loglog(N_samples_list, ref_line_2, 'r--', label='Reference O(1/sqrt(N_samples))')
     plt.title('Convergence of Monte Carlo Sampling')
     plt.xlabel('Number of MC Samples')
@@ -190,7 +194,6 @@ def plot_convergence(lqr_solver, x0, T):
     plt.grid(True, which="both", ls="--")
 
     plt.tight_layout()
-    
     os.makedirs('plots', exist_ok=True)
     save_path = os.path.join('plots', 'convergence_plot.png')
     plt.savefig(save_path, dpi=300)
