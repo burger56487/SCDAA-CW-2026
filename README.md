@@ -50,18 +50,16 @@ All scripts can be run on CPU. If a CUDA-enabled GPU is available and correctly 
 
 ```bash
 pip install numpy scipy matplotlib torch
-
----
-
+'''
 ### 2. Run All Experiments
 
 All figures and numerical results in the report can be reproduced by running:
 
 ```bash
-python ex1_lqr_mc.py
-python ex2_supervised.py
-python ex3_dgm.py
-python ex4_pia.py
+python experiments/ex1_lqr_mc.py
+python experiments/ex2_supervised.py
+python experiments/ex3_dgm.py
+python experiments/ex4_policy_iteration.py
 ```
 
 Generated plots will be saved automatically in the `plots/` directory.
@@ -73,16 +71,26 @@ Generated plots will be saved automatically in the `plots/` directory.
 ```
 SCDAA-CW-2026/
 │
-├── SCDAA.pdf                   # Submitted coursework report
+├── experiments/
+│   ├── ex1_lqr_mc.py
+│   ├── ex2_supervised.py
+│   ├── ex3_dgm.py
+│   └── ex4_policy_iteration.py
 │
-├── ex1_lqr_mc.py               # Exercise 1: LQR solution & Monte-Carlo validation
-├── ex2_supervised.py           # Exercise 2: Supervised learning of value & control
-├── ex3_dgm.py                  # Exercise 3: Deep Galerkin Method for PDE
-├── ex4_policy_iteration.py     # Exercise 4: Policy Iteration with DGM
+├── plots/
+│   ├── convergence_plot.png
+│   ├── ex2_supervised_loss.png
+│   ├── ex3_dgm_results.png
+│   └── ex4_policy_iteration.png
 │
-├── plots/                      # Figures generated during execution
-│
-└── README.md
+├── README.md
+|
+|—— gitmore
+| ├── _pycache
+│ ├── venv
+│ └── vscode
+│ 
+
 ```
 
 ---
@@ -96,7 +104,7 @@ Solves the Riccati equation for the analytical LQR solution and verifies numeric
 Run:
 
 ```bash
-python ex1_lqr_mc.py
+python experiments/ex1_lqr_mc.py
 ```
 
 Outputs:
@@ -122,7 +130,7 @@ Networks used:
 Run:
 
 ```bash
-python ex2_supervised.py
+python experiments/ex2_supervised.py
 ```
 
 Outputs:
@@ -139,7 +147,7 @@ Solves the linear PDE associated with a fixed control policy using the **Deep Ga
 Run:
 
 ```bash
-python ex3_dgm.py
+python experiments/ex3_dgm.py
 ```
 
 Outputs:
@@ -156,7 +164,7 @@ Implements iterative **policy evaluation and policy improvement** using DGM appr
 Run:
 
 ```bash
-python ex4_policy_iteration.py
+python experiments/ex4_policy_iteration.py
 ```
 
 Outputs:
@@ -175,10 +183,10 @@ The marker can reproduce all experiments using:
 ```bash
 pip install numpy scipy matplotlib torch
 
-python ex1_lqr_mc.py
-python ex2_supervised.py
-python ex3_dgm.py
-python ex4_policy_iteration.py
+python experiments/ex1_lqr_mc.py
+python experiments/ex2_supervised.py
+python experiments/ex3_dgm.py
+python experiments/ex4_policy_iteration.py
 ```
 
 No manual parameter tuning or intervention is required.
