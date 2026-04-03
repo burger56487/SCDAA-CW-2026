@@ -10,7 +10,7 @@ The project implements numerical methods for solving a two-dimensional Linear Qu
 - the Deep Galerkin Method (DGM),
 - policy iteration with neural-network approximation.
 
-The scripts in this repository reproduce the numerical figures and tabulated results reported in the final coursework report. As required by the coursework brief, the repository includes a `README.md` explaining how to run the code to reproduce the reported outputs. :contentReference[oaicite:1]{index=1}
+The scripts in this repository reproduce the numerical figures and tabulated results reported in the final coursework report. As required by the coursework brief, the repository includes a `README.md` explaining how to run the code to reproduce the reported outputs.
 
 ---
 
@@ -50,7 +50,7 @@ All scripts can be run on CPU. If a CUDA-enabled GPU is available and correctly 
 
 ```bash
 pip install numpy scipy matplotlib torch
-'''
+```
 ### 2. Run All Experiments
 
 All figures and numerical results in the report can be reproduced by running:
@@ -71,6 +71,8 @@ Generated plots will be saved automatically in the `plots/` directory.
 ```
 SCDAA-CW-2026/
 │
+├── SCDAA.pdf                  # Submitted coursework report
+|
 ├── experiments/
 │   ├── ex1_lqr_mc.py
 │   ├── ex2_supervised.py
