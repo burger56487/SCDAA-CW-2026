@@ -1,18 +1,31 @@
 import os
+import random
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
+
 # ==========================================
-# 1. Define DGM Network Architecture
+# 0. Reproducibility
+# ==========================================
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+# ==========================================
+# 1. Network
 # ==========================================
 class NetDGM(nn.Module):
     """
-    Neural network to approximate the PDE solution u(t,x).
-    Uses 3 hidden layers with 100 neurons each to ensure sufficient 
-    capacity for learning second-order derivatives.
+    DGM-style fully connected network with 3 hidden layers.
+    Input dimension = 3  (t, x1, x2)
+    Output dimension = 1
     """
     def __init__(self, input_dim=3, hidden_dim=100, output_dim=1):
         super(NetDGM, self).__init__()
@@ -26,226 +39,273 @@ class NetDGM(nn.Module):
             nn.Linear(hidden_dim, output_dim)
         )
 
-    def forward(self, t, x):
-        tx = torch.cat([t, x], dim=1)
-        return self.net(tx)
+    def forward(self, x):
+        return self.net(x)
+
 
 # ==========================================
-# 2. Monte Carlo Benchmark Solution
+# 2. Sampling Utilities
 # ==========================================
-def run_mc_constant_alpha(x0, T, N_steps, N_samples, H_np, M_np, sigma_np, C_np, D_np, R_np):
+def sample_interior(batch_size, T, device):
+    t = torch.rand(batch_size, 1, device=device, dtype=torch.float32) * T
+    x = torch.rand(batch_size, 2, device=device, dtype=torch.float32) * 6.0 - 3.0
+    inputs = torch.cat([t, x], dim=1)
+    inputs.requires_grad_(True)
+    return inputs
+
+
+def sample_terminal(batch_size, T, device):
+    t = torch.full((batch_size, 1), T, device=device, dtype=torch.float32)
+    x = torch.rand(batch_size, 2, device=device, dtype=torch.float32) * 6.0 - 3.0
+    inputs = torch.cat([t, x], dim=1)
+    return inputs
+
+
+def compute_hessian_wrt_x(u, inputs):
     """
-    Runs a Monte Carlo simulation with a constant control policy alpha=[1, 1]^T
-    to serve as the ground truth benchmark for evaluating DGM.
+    u: shape (batch, 1)
+    inputs: shape (batch, 3) = (t, x1, x2), requires_grad=True
+    Returns:
+        grad_all: shape (batch, 3)
+        hessian_x: shape (batch, 2, 2)
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    grad_all = torch.autograd.grad(
+        u.sum(), inputs, create_graph=True, retain_graph=True
+    )[0]
+
+    u_x = grad_all[:, 1:3]
+    hessian_cols = []
+
+    for j in range(2):
+        grad2 = torch.autograd.grad(
+            u_x[:, j].sum(), inputs, create_graph=True, retain_graph=True
+        )[0][:, 1:3]
+        hessian_cols.append(grad2.unsqueeze(-1))
+
+    hessian_x = torch.cat(hessian_cols, dim=-1)  # (batch, 2, 2)
+    return grad_all, hessian_x
+
+
+# ==========================================
+# 3. Monte Carlo Benchmark for Constant Control
+# ==========================================
+def run_mc_constant_alpha(H, M, sigma, C, D, R, alpha, x0, T, N_steps, N_samples, device):
     dt = T / N_steps
-    
+    sqrt_dt = np.sqrt(dt)
+
+    H_t = torch.tensor(H, dtype=torch.float32, device=device)
+    M_t = torch.tensor(M, dtype=torch.float32, device=device)
+    sigma_t = torch.tensor(sigma, dtype=torch.float32, device=device)
+    C_t = torch.tensor(C, dtype=torch.float32, device=device)
+    D_t = torch.tensor(D, dtype=torch.float32, device=device)
+    R_t = torch.tensor(R, dtype=torch.float32, device=device)
+
+    alpha_col = torch.tensor(alpha, dtype=torch.float32, device=device).view(2, 1)
+    M_alpha = M_t @ alpha_col
+    alpha_cost = (alpha_col.transpose(0, 1) @ D_t @ alpha_col).item()
+
+    X = torch.tensor(x0, dtype=torch.float32, device=device).repeat(N_samples, 1).unsqueeze(-1)
+    total_cost = torch.zeros(N_samples, device=device)
+
+    for _ in range(N_steps):
+        x_row = X.squeeze(-1)
+        x_cost = torch.einsum("bi,ij,bj->b", x_row, C_t, x_row)
+        total_cost += (x_cost + alpha_cost) * dt
+
+        dW = torch.randn(N_samples, 2, 1, device=device) * sqrt_dt
+        drift = torch.matmul(H_t.unsqueeze(0), X) + M_alpha.unsqueeze(0)
+        diffusion = torch.matmul(sigma_t.unsqueeze(0), dW)
+        X = X + drift * dt + diffusion
+
+    x_terminal = X.squeeze(-1)
+    terminal_cost = torch.einsum("bi,ij,bj->b", x_terminal, R_t, x_terminal)
+    total_cost += terminal_cost
+
+    return total_cost.mean().item()
+
+
+# ==========================================
+# 4. PDE Loss
+# ==========================================
+def dgm_losses(model, H, M, sigma, C, D, R, alpha, T, batch_interior, batch_terminal, device):
+    sigma_sq = sigma @ sigma.T
+
+    interior = sample_interior(batch_interior, T, device)
+    terminal = sample_terminal(batch_terminal, T, device)
+
+    u = model(interior)  # (batch,1)
+    grad_all, hessian_x = compute_hessian_wrt_x(u, interior)
+
+    u_t = grad_all[:, 0:1]
+    u_x = grad_all[:, 1:3]
+    x = interior[:, 1:3]
+
+    drift_x = x @ H.T
+    drift_alpha = alpha.view(1, 2) @ M.T
+    drift_total = drift_x + drift_alpha
+
+    diffusion_term = 0.5 * torch.einsum("ij,bij->b", sigma_sq, hessian_x).unsqueeze(1)
+    drift_term = torch.sum(u_x * drift_total, dim=1, keepdim=True)
+
+    x_cost = torch.einsum("bi,ij,bj->b", x, C, x).unsqueeze(1)
+    alpha_cost = torch.einsum("i,ij,j->", alpha, D, alpha).view(1, 1).expand_as(x_cost)
+
+    residual = u_t + diffusion_term + drift_term + x_cost + alpha_cost
+    eqn_loss = torch.mean(residual ** 2)
+
+    u_T = model(terminal)
+    x_T = terminal[:, 1:3]
+    terminal_target = torch.einsum("bi,ij,bj->b", x_T, R, x_T).unsqueeze(1)
+    boundary_loss = torch.mean((u_T - terminal_target) ** 2)
+
+    total_loss = eqn_loss + boundary_loss
+    return total_loss, eqn_loss, boundary_loss
+
+
+# ==========================================
+# 5. Main
+# ==========================================
+if __name__ == "__main__":
+    set_seed(42)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Current device: {device}")
+
+    # Problem setup
+    H_np = np.array([[0.1, 0.0], [0.0, 0.1]], dtype=np.float64)
+    M_np = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    sigma_np = np.array([[0.2, 0.0], [0.0, 0.2]], dtype=np.float64)
+    C_np = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    D_np = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    R_np = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    alpha_np = np.array([1.0, 1.0], dtype=np.float64)
+    T_val = 1.0
+    x0 = np.array([1.0, -1.0], dtype=np.float64)
+
     H = torch.tensor(H_np, dtype=torch.float32, device=device)
     M = torch.tensor(M_np, dtype=torch.float32, device=device)
     sigma = torch.tensor(sigma_np, dtype=torch.float32, device=device)
     C = torch.tensor(C_np, dtype=torch.float32, device=device)
     D = torch.tensor(D_np, dtype=torch.float32, device=device)
-    R_mat = torch.tensor(R_np, dtype=torch.float32, device=device)
+    R = torch.tensor(R_np, dtype=torch.float32, device=device)
+    alpha = torch.tensor(alpha_np, dtype=torch.float32, device=device)
 
-    X = torch.tensor(x0, dtype=torch.float32, device=device).repeat(N_samples, 1).unsqueeze(-1)
-    total_cost = torch.zeros(N_samples, 1, 1, device=device)
-    
-    # Constant control policy alpha = [1, 1]^T
-    a_col = torch.ones(N_samples, 2, 1, dtype=torch.float32, device=device)
-    
-    for _ in range(N_steps):
-        cost_X = torch.bmm(torch.bmm(X.transpose(1, 2), C.expand(N_samples, 2, 2)), X)
-        cost_a = torch.bmm(torch.bmm(a_col.transpose(1, 2), D.expand(N_samples, 2, 2)), a_col)
-        total_cost += (cost_X + cost_a) * dt
-        
-        dW = torch.randn(N_samples, 2, 1, device=device) * np.sqrt(dt)
-        drift = torch.bmm(H.expand(N_samples, 2, 2), X) + torch.bmm(M.expand(N_samples, 2, 2), a_col)
-        diffusion = torch.bmm(sigma.expand(N_samples, 2, 2), dW)
-        X = X + drift * dt + diffusion
-        
-    term_cost = torch.bmm(torch.bmm(X.transpose(1, 2), R_mat.expand(N_samples, 2, 2)), X)
-    total_cost += term_cost
-    return total_cost.mean().item()
-
-# ==========================================
-# 3. Deep Galerkin Method (DGM) Loss Function
-# ==========================================
-def dgm_loss(model, t, x, H, M, sigma, C, D, R_mat, T):
-    batch_size = t.shape[0]
-    
-    # Gradients must be enabled for autograd to compute PDE derivatives
-    t.requires_grad_(True)
-    x.requires_grad_(True)
-    
-    u = model(t, x) # Shape: (Batch, 1)
-    
-    # ---------------- 1. Exact Computation of 1st and 2nd Derivatives ----------------
-    du = torch.autograd.grad(u, inputs=[t, x], grad_outputs=torch.ones_like(u), create_graph=True)
-    u_t = du[0] # Shape: (Batch, 1)
-    u_x = du[1] # Shape: (Batch, 2)
-    
-    # [Crucial Fix]: Extract each dimension of the first derivative before deriving 
-    # to prevent incorrect Hessian computation due to cross-batch summation.
-    du_dx1 = u_x[:, 0:1]
-    du_dx2 = u_x[:, 1:2]
-    d2u_dx1dx = torch.autograd.grad(du_dx1, x, grad_outputs=torch.ones_like(du_dx1), create_graph=True)[0]
-    d2u_dx2dx = torch.autograd.grad(du_dx2, x, grad_outputs=torch.ones_like(du_dx2), create_graph=True)[0]
-    
-    d2u_dx1x1 = d2u_dx1dx[:, 0:1]
-    d2u_dx1x2 = d2u_dx1dx[:, 1:2]
-    d2u_dx2x1 = d2u_dx2dx[:, 0:1]
-    d2u_dx2x2 = d2u_dx2dx[:, 1:2]
-
-    sigma_sq = sigma @ sigma.T
-    trace_term = 0.5 * (
-        sigma_sq[0, 0] * d2u_dx1x1 + sigma_sq[0, 1] * d2u_dx2x1 +
-        sigma_sq[1, 0] * d2u_dx1x2 + sigma_sq[1, 1] * d2u_dx2x2
-    )
-
-    # ---------------- 2. Elegant BMM Matrix Operations ----------------
-    u_x_row = u_x.unsqueeze(1) # (B, 1, 2)
-    x_col = x.unsqueeze(-1)    # (B, 2, 1)
-    
-    # (\partial_x u)^T H x
-    term_Hx = torch.bmm(torch.bmm(u_x_row, H.expand(batch_size, 2, 2)), x_col).squeeze(-1)
-    
-    # (\partial_x u)^T M \alpha (where \alpha = [1, 1]^T)
-    alpha = torch.ones(batch_size, 2, 1, device=t.device)
-    term_Malpha = torch.bmm(torch.bmm(u_x_row, M.expand(batch_size, 2, 2)), alpha).squeeze(-1)
-    
-    # x^T C x
-    x_row = x.unsqueeze(1)
-    term_Cx = torch.bmm(torch.bmm(x_row, C.expand(batch_size, 2, 2)), x_col).squeeze(-1)
-    
-    # \alpha^T D \alpha
-    alpha_row = alpha.transpose(1, 2)
-    term_Dalpha = torch.bmm(torch.bmm(alpha_row, D.expand(batch_size, 2, 2)), alpha).squeeze(-1)
-    
-    # PDE Interior Equation Residual
-    residual = u_t + trace_term + term_Hx + term_Malpha + term_Cx + term_Dalpha
-    loss_eqn = torch.mean(residual**2)
-    
-    # ---------------- 3. Terminal Boundary Condition Residual ----------------
-    t_T = torch.full_like(t, T, requires_grad=False)
-    x_T = (torch.rand(batch_size, 2, device=t.device) * 6.0) - 3.0 # Independent sampling at terminal boundary
-    
-    u_T_pred = model(t_T, x_T)
-    
-    x_T_row = x_T.unsqueeze(1)
-    x_T_col = x_T.unsqueeze(-1)
-    u_T_true = torch.bmm(torch.bmm(x_T_row, R_mat.expand(batch_size, 2, 2)), x_T_col).squeeze(-1)
-    
-    loss_bound = torch.mean((u_T_pred - u_T_true)**2)
-    
-    return loss_eqn + loss_bound, loss_eqn.item(), loss_bound.item()
-
-# ==========================================
-# 4. Main Program: DGM Training and MC Validation
-# ==========================================
-if __name__ == "__main__":
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Current computation device: {device}")
-
-    # System Matrices
-    H_mat = np.array([[0.1, 0.0], [0.0, 0.1]])
-    M_mat = np.array([[1.0, 0.0], [0.0, 1.0]])
-    sigma_mat = np.array([[0.2, 0.0], [0.0, 0.2]])
-    C_mat = np.array([[1.0, 0.0], [0.0, 1.0]]) 
-    D_mat = np.array([[1.0, 0.0], [0.0, 1.0]]) 
-    R_mat = np.array([[1.0, 0.0], [0.0, 1.0]]) 
-    T_val = 1.0
-    test_x0 = [1.0, -1.0]
-
-    # Convert numpy arrays to PyTorch Tensors
-    H_t = torch.tensor(H_mat, dtype=torch.float32, device=device)
-    M_t = torch.tensor(M_mat, dtype=torch.float32, device=device)
-    sigma_t = torch.tensor(sigma_mat, dtype=torch.float32, device=device)
-    C_t = torch.tensor(C_mat, dtype=torch.float32, device=device)
-    D_t = torch.tensor(D_mat, dtype=torch.float32, device=device)
-    R_t = torch.tensor(R_mat, dtype=torch.float32, device=device)
-
-    # Precompute MC ground truth for comparison
-    print("Computing MC benchmark value (Constant policy alpha=[1,1]^T)...")
+    print("Computing Monte Carlo benchmark for constant control alpha = (1,1)^T ...")
     mc_benchmark = run_mc_constant_alpha(
-        test_x0, T_val, N_steps=1000, N_samples=100000, 
-        H_np=H_mat, M_np=M_mat, sigma_np=sigma_mat, 
-        C_np=C_mat, D_np=D_mat, R_np=R_mat
+        H=H_np,
+        M=M_np,
+        sigma=sigma_np,
+        C=C_np,
+        D=D_np,
+        R=R_np,
+        alpha=alpha_np,
+        x0=x0,
+        T=T_val,
+        N_steps=5000,
+        N_samples=100000,
+        device=device,
     )
-    print(f"MC Ground Truth u(0, x0): {mc_benchmark:.6f}")
+    print(f"Monte Carlo benchmark u(0, x0) = {mc_benchmark:.6f}")
 
-    # Initialize Network, Optimizer, and Learning Rate Scheduler
     model = NetDGM(input_dim=3, hidden_dim=100, output_dim=1).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1500, gamma=0.5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2000, gamma=0.5)
 
     epochs = 4000
-    batch_size = 2048
-    history_loss = []
-    history_mc_error = []
-    eval_epochs = []
+    batch_interior = 2048
+    batch_terminal = 2048
+    eval_every = 100
 
-    print(f"\nStarting DGM Training ({epochs} epochs in total)...")
-    
+    total_loss_hist = []
+    eqn_loss_hist = []
+    boundary_loss_hist = []
+
+    eval_epochs = []
+    rel_error_hist = []
+
+    print(f"Starting DGM training for {epochs} epochs...")
+
     for epoch in range(epochs):
-        # Explicitly set the model to training mode
-        model.train() 
         optimizer.zero_grad()
-        
-        # Random sampling within the spatial and temporal domain
-        t_batch = torch.rand((batch_size, 1), dtype=torch.float32, device=device) * T_val
-        x_batch = torch.rand((batch_size, 2), dtype=torch.float32, device=device) * 6.0 - 3.0
-        
-        loss, l_eqn, l_bound = dgm_loss(model, t_batch, x_batch, H_t, M_t, sigma_t, C_t, D_t, R_t, T_val)
-        
-        loss.backward()
+
+        total_loss, eqn_loss, boundary_loss = dgm_losses(
+            model=model,
+            H=H,
+            M=M,
+            sigma=sigma,
+            C=C,
+            D=D,
+            R=R,
+            alpha=alpha,
+            T=T_val,
+            batch_interior=batch_interior,
+            batch_terminal=batch_terminal,
+            device=device,
+        )
+
+        total_loss.backward()
         optimizer.step()
         scheduler.step()
-        
-        history_loss.append(loss.item())
-        
-        # Periodically evaluate relative error against the MC benchmark
-        if (epoch + 1) % 100 == 0:
-            # Switch to evaluation mode
-            model.eval() 
-            with torch.no_grad():
-                test_t = torch.tensor([[0.0]], dtype=torch.float32, device=device)
-                test_x = torch.tensor([test_x0], dtype=torch.float32, device=device)
-                u_pred = model(test_t, test_x).item()
-                rel_error = abs(u_pred - mc_benchmark) / abs(mc_benchmark)
-                history_mc_error.append(rel_error)
-                eval_epochs.append(epoch + 1)
-            
-            if (epoch + 1) % 500 == 0:
-                print(f"Epoch [{epoch+1:4d}/{epochs}] | Loss: {loss.item():.4e} (Eqn: {l_eqn:.4e}, Bd: {l_bound:.4e}) | Rel Error: {rel_error:.4%}")
 
-    # ---------------- 5. Plot and Save Results ----------------
+        total_loss_hist.append(total_loss.item())
+        eqn_loss_hist.append(eqn_loss.item())
+        boundary_loss_hist.append(boundary_loss.item())
+
+        if (epoch + 1) % eval_every == 0:
+            with torch.no_grad():
+                inp_ref = torch.tensor([[0.0, x0[0], x0[1]]], dtype=torch.float32, device=device)
+                u_pred = model(inp_ref).item()
+                rel_err = abs(u_pred - mc_benchmark) / abs(mc_benchmark)
+
+            eval_epochs.append(epoch + 1)
+            rel_error_hist.append(rel_err)
+
+        if (epoch + 1) % 500 == 0:
+            print(
+                f"Epoch [{epoch + 1:4d}/{epochs}] | "
+                f"Total Loss: {total_loss.item():.6e} | "
+                f"Eqn Loss: {eqn_loss.item():.6e} | "
+                f"Boundary Loss: {boundary_loss.item():.6e} | "
+                f"Rel Error: {rel_error_hist[-1]:.6e}"
+            )
+
+    os.makedirs("plots", exist_ok=True)
+
     plt.figure(figsize=(14, 6))
 
     plt.subplot(1, 2, 1)
-    plt.plot(history_loss, color='purple', alpha=0.8, label='Total DGM Loss')
-    plt.yscale('log')
-    plt.title('DGM Training Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss (Log Scale)')
-    plt.grid(True, which="both", ls="--")
+    plt.plot(total_loss_hist, label="Total DGM Loss")
+    plt.yscale("log")
+    plt.title("DGM Training Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (log scale)")
     plt.legend()
+    plt.grid(True, which="both", ls="--")
 
     plt.subplot(1, 2, 2)
-    plt.plot(eval_epochs, history_mc_error, 'o-', color='teal', label='Relative Error vs MC')
-    plt.yscale('log')
-    plt.title('DGM Relative Error Evaluated against Monte Carlo')
-    plt.xlabel('Epochs')
-    plt.ylabel('Relative Error (Log Scale)')
-    plt.grid(True, which="both", ls="--")
+    plt.plot(eval_epochs, rel_error_hist, marker="o", markersize=3, label="Relative Error vs MC")
+    plt.yscale("log")
+    plt.title("DGM Relative Error vs Monte Carlo")
+    plt.xlabel("Epoch")
+    plt.ylabel("Relative Error (log scale)")
     plt.legend()
+    plt.grid(True, which="both", ls="--")
 
     plt.tight_layout()
-    
-    # ==========================================
-    # MODIFIED: Ensure 'plots' directory exists and save the image there
-    # ==========================================
-    os.makedirs('plots', exist_ok=True)
-    save_path = os.path.join('plots', 'ex3_dgm_results.png')
+
+    save_path = os.path.join("plots", "ex3_dgm_results.png")
     plt.savefig(save_path, dpi=300)
-    print(f"\n✅ DGM training complete! The loss and error comparison plots have been saved as '{save_path}'.")
+    print(f"\n✅ Plot saved to '{save_path}'.")
+
+    print("\nSuggested table entries every 500 epochs:")
+    print("Epoch | Total Loss | Eqn Residual | Boundary Residual | Relative Error")
+    for k in [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000]:
+        idx = k - 1
+        eval_idx = eval_epochs.index(k)
+        print(
+            f"{k:5d} | "
+            f"{total_loss_hist[idx]:.6e} | "
+            f"{eqn_loss_hist[idx]:.6e} | "
+            f"{boundary_loss_hist[idx]:.6e} | "
+            f"{rel_error_hist[eval_idx]:.6e}"
+        )
